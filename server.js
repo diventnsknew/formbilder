@@ -1,8 +1,10 @@
+require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,14 +45,82 @@ app.get('/api/reports', (req, res) => {
     res.json(reports);
 });
 
+// Function to send data to Telegram
+async function sendToTelegram(reportData) {
+    try {
+        // Format message for Telegram
+        let message = `📊 <b>Новый отчет от ${reportData.user_info?.fullName || 'Неизвестный'}</b>\n\n`;
+        message += `🏢 Отдел: ${reportData.department}\n`;
+        message += `💼 Должность: ${reportData.user_info?.position || 'Не указана'}\n`;
+        message += `📞 Контакт: ${reportData.user_info?.contact || 'Не указан'}\n`;
+        message += `📅 Период: ${reportData.period.week_dates}\n`;
+        message += `📈 Тип отчета: ${reportData.report_type === 'weekly' ? 'Недельный' : 'Месячный'}\n\n`;
+
+        // Add KPIs
+        message += `<b>🎯 Показатели:</b>\n`;
+        if (reportData.kpi_indicators.deals.quantity > 0) {
+            message += `🔹 Сделки: ${reportData.kpi_indicators.deals.quantity} (${reportData.kpi_indicators.deals.description})\n`;
+        }
+        if (reportData.kpi_indicators.meetings.quantity > 0) {
+            message += `🔹 Планерки: ${reportData.kpi_indicators.meetings.quantity} (${reportData.kpi_indicators.meetings.description})\n`;
+        }
+        if (reportData.kpi_indicators.training.quantity > 0) {
+            message += `🔹 Обучение: ${reportData.kpi_indicators.training.quantity} (${reportData.kpi_indicators.training.description})\n`;
+        }
+
+        // Add tasks
+        if (reportData.tasks && reportData.tasks.length > 0) {
+            message += `\n<b>✅ Задачи:</b>\n`;
+            reportData.tasks.forEach((task, index) => {
+                message += `${index + 1}. <b>${task.task_text}</b> - ${task.status}\n`;
+                if (task.product) {
+                    message += `   Продукт: ${task.product}\n`;
+                }
+                if (task.comment) {
+                    message += `   Комментарий: ${task.comment}\n`;
+                }
+            });
+        }
+
+        // Add unplanned tasks
+        if (reportData.unplanned_tasks && reportData.unplanned_tasks.length > 0) {
+            message += `\n<b>⚠️ Вне плана:</b>\n`;
+            reportData.unplanned_tasks.forEach((task, index) => {
+                message += `${index + 1}. <b>${task.task_text}</b> - ${task.status}\n`;
+                if (task.product) {
+                    message += `   Продукт: ${task.product}\n`;
+                }
+            });
+        }
+
+        // Calculate stats
+        message += `\n📊 Эффективность: ${reportData.calculated_stats.percent}% (${reportData.calculated_stats.done}/${reportData.calculated_stats.total})`;
+
+        // Send to Telegram bot
+        // Note: You need to set up your Telegram bot and replace BOT_TOKEN and CHAT_ID
+        const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || 'YOUR_BOT_TOKEN'; // Replace with your bot token
+        const telegramChatId = process.env.TELEGRAM_CHAT_ID || 'YOUR_CHAT_ID'; // Replace with your chat ID
+        const telegramApiUrl = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
+
+        await axios.post(telegramApiUrl, {
+            chat_id: telegramChatId,
+            text: message,
+            parse_mode: 'HTML'
+        });
+    } catch (error) {
+        console.error('Error sending to Telegram:', error.message);
+        // Don't throw error to prevent blocking the main submission
+    }
+}
+
 // Save or Update Report
-app.post('/api/reports', (req, res) => {
+app.post('/api/reports', async (req, res) => {
     const newReport = req.body;
     let reports = readData();
-    
+
     // Check if updating existing by ID
     const existingIndexById = reports.findIndex(r => r.id === newReport.id);
-    
+
     if (existingIndexById >= 0) {
         // Full overwrite (Editing mode)
         reports[existingIndexById] = newReport;
@@ -58,8 +128,12 @@ app.post('/api/reports', (req, res) => {
         // Add new
         reports.unshift(newReport);
     }
-    
+
     writeData(reports);
+
+    // Send to Telegram in the background
+    sendToTelegram(newReport);
+
     res.json({ success: true, report: newReport });
 });
 

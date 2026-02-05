@@ -17,8 +17,13 @@ const state = {
     timeRemaining: '',
     editingId: null,
     isSubmitting: false,
-    
+
     // Form Data
+    userInfo: {
+        fullName: '',
+        position: '',
+        contact: ''
+    },
     period: { week_dates: '', is_manual: false },
     kpis: {
         deals: { quantity: 0, description: '' },
@@ -27,7 +32,7 @@ const state = {
     },
     tasks: [],
     unplannedTasks: [],
-    
+
     // Data from Server
     history: []
 };
@@ -238,6 +243,27 @@ const renderForm = () => {
                 </div>
             </div>
         </header>
+
+        <!-- User Info -->
+        <section class="space-y-4">
+            <h2 class="text-xl font-bold text-slate-900 flex items-center gap-2 uppercase tracking-wide"><i data-lucide="user" class="text-blue-600"></i>Информация о сотруднике</h2>
+            <div class="bg-white border-2 border-slate-300 p-4 space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">ФИО</label>
+                        <input type="text" value="${state.userInfo.fullName}" oninput="updateUserInfo('fullName', this.value)" ${state.isLocked ? 'disabled' : ''} class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-sm md:text-base border-2 border-slate-200 focus:bg-white focus:outline-none focus:border-indigo-600 resize-none min-h-[42px]" placeholder="Введите ФИО">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Должность</label>
+                        <input type="text" value="${state.userInfo.position}" oninput="updateUserInfo('position', this.value)" ${state.isLocked ? 'disabled' : ''} class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-sm md:text-base border-2 border-slate-200 focus:bg-white focus:outline-none focus:border-indigo-600 resize-none min-h-[42px]" placeholder="Введите должность">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Контакт</label>
+                        <input type="text" value="${state.userInfo.contact}" oninput="updateUserInfo('contact', this.value)" ${state.isLocked ? 'disabled' : ''} class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-sm md:text-base border-2 border-slate-200 focus:bg-white focus:outline-none focus:border-indigo-600 resize-none min-h-[42px]" placeholder="Telegram/Email/Телефон">
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <!-- KPI -->
         <section class="space-y-4">
@@ -518,6 +544,7 @@ window.updateTask = (id, field, val) => { const t = state.tasks.find(x => x.id =
 window.addUnplanned = () => { state.unplannedTasks.push({ id: generateId(), task_text: '', product: '', status: 'Выполнено' }); render(); };
 window.removeUnplanned = (id) => { state.unplannedTasks = state.unplannedTasks.filter(t => t.id !== id); render(); };
 window.updateUnplanned = (id, field, val) => { const t = state.unplannedTasks.find(x => x.id === id); if(t) t[field] = val; };
+window.updateUserInfo = (field, val) => { state.userInfo[field] = val; };
 
 window.resetForm = () => {
     if(!confirm('Сбросить форму?')) return;
@@ -554,10 +581,10 @@ window.submitReport = async () => {
 
     const validTasks = state.tasks.filter(t => t.task_text.trim());
     const validUnplanned = state.unplannedTasks.filter(t => t.task_text.trim());
-    
+
     // Check for merge
     const existing = state.history.find(r => r.department === state.department && r.report_type === state.reportType && r.period.week_dates === state.period.week_dates);
-    
+
     let finalPayload = {
         department: state.department,
         report_type: state.reportType,
@@ -565,6 +592,7 @@ window.submitReport = async () => {
         kpi_indicators: state.kpis,
         tasks: validTasks, // IDs will be stripped on server or here. Just sending as is for now.
         unplanned_tasks: validUnplanned,
+        user_info: state.userInfo, // Add user info
         calculated_stats: {
              done: validTasks.filter(t => t.status === 'Выполнено').length,
              total: validTasks.length,
@@ -593,17 +621,20 @@ window.submitReport = async () => {
     }
 
     try {
+        // Send to server (server will handle Telegram notification)
         await fetch('/api/reports', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(finalPayload)
         });
         await api.fetchReports(); // Refresh
+
         alert('Сохранено!');
         state.editingId = null;
         navigate('dashboard');
     } catch(e) {
         alert('Ошибка');
+        console.error('Submit error:', e);
     } finally {
         state.isSubmitting = false;
         render();
