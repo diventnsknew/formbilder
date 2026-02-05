@@ -97,15 +97,6 @@ const api = {
             const res = await fetch('/api/reports');
             state.history = await res.json();
         } catch (e) { console.error(e); }
-    },
-    syncReports: async (reports) => {
-        try {
-            await fetch('/api/reports/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(reports)
-            });
-        } catch (e) { console.error(e); }
     }
 };
 
